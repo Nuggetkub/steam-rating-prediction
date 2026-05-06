@@ -1,0 +1,75 @@
+============================================================
+  STEAM RATING — XGBoost Pipeline
+============================================================
+
+[1/9] Loading CSV...
+  Loaded: (163918, 102)  (21s)
+  After MIN_REVIEWS=100: 22,097 games
+
+[2/9] Preprocessing...
+[3/9] Parsing genres / categories / publishers / developers...
+  Sample genres    : ['Action']
+  Sample publisher : Valve
+
+[4/9] Tier classification & hold-out sampling...
+  Hold-out: 16 games
+  df_clean after hold-out removal: 22,081 games
+
+[5/9] Multi-hot encoding genres & categories...
+  Genre cols: 25  Category cols: 58
+[6/9] Mean target encoding publisher & developer...
+  global_mean=7.9680  publisher range [1.06–10.00]
+
+[7/9] Feature engineering...
+  Feature matrix: (22081, 124)
+  Train: 17,664  Test: 4,417
+
+[8/9] Baseline models...
+  Random Forest (baseline)            RMSE=0.6707  MAE=0.4092  R2=0.7886  (5s)
+  XGBoost (baseline)                  RMSE=0.6417  MAE=0.3935  R2=0.8065  (1s)
+
+[9/9] Hyperparameter tuning...
+  Tuning XGBoost (20 candidates x 5-fold)...
+    CV RMSE=0.6422  Test RMSE=0.6372  MAE=0.3867  R2=0.8092  (30s)
+    Best params: {'subsample': 0.6, 'reg_lambda': 1.0, 'reg_alpha': 1.0, 'n_estimators': 500, 'min_child_weight': 3, 'max_depth': 7, 'learning_rate': 0.01, 'gamma': 0, 'colsample_bytree': 0.8}
+  Tuning RandomForest (15 candidates x 5-fold)...
+    CV RMSE=0.6492  Test RMSE=0.6426  MAE=0.3815  R2=0.8059  (65s)
+    Best params: {'n_estimators': 300, 'min_samples_split': 2, 'min_samples_leaf': 5, 'max_features': 0.5, 'max_depth': 10}
+
+============================================================
+  MODEL COMPARISON
+============================================================
+  Model                                  RMSE     MAE      R2
+  --------------------------------------------------------
+  Baseline XGBoost                     0.6417  0.3935  0.8065
+  Tuned XGBoost                        0.6372  0.3867  0.8092
+  Tuned RandomForest                   0.6426  0.3815  0.8059
+  (Old HGBR baseline — 39 features)    1.2754  0.9694  0.2378
+
+  Winner: Tuned XGBoost  (RMSE 0.6372)
+
+  Top 20 Feature Importances:
+    developer_rating_mean                         0.3638
+    publisher_rating_mean                         0.0822
+    cat_remote_play_on_tablet                     0.0146
+    metacritic_score                              0.0145
+    steamspy_tags_Classic                         0.0111
+    recommendations_total                         0.0110
+    cat_multi_player                              0.0105
+    cat_chat_speech_to_text                       0.0096
+    cat_steam_trading_cards                       0.0087
+    cat_lan_co_op                                 0.0085
+    steamspy_tags_Military                        0.0083
+    cat_tracked_controller_support                0.0083
+    cat_steam_cloud                               0.0081
+    cat_surround_sound                            0.0078
+    ratings_usk_rating                            0.0077
+    cat_remote_play_together                      0.0077
+    cat_family_sharing                            0.0077
+    price_usd                                     0.0076
+    cat_vr_only                                   0.0072
+    has_metacritic                                0.0071
+
+  PKL saved: 3669 KB  (124 features)
+
+Done.
