@@ -15,9 +15,44 @@ The model is trained on 22,097 games (filtered to ≥ 100 reviews) from a 163,91
 | Model | XGBoost (`tree_method=hist`) |
 | Features | 124 |
 | Test-set RMSE | 0.6372 |
+| Test-set MAE | 0.3867 |
 | Test-set R² | 0.8092 |
 | Hold-out RMSE (16 games) | 1.0732 |
+| Hold-out MAE (16 games) | 0.8462 |
+| Hold-out within 0.5 pts | 5/16 (31%) |
 | Hold-out within 1.0 pts | 12/16 (75%) |
+
+### Hold-Out Results per Game
+
+| # | Game | Tier | Actual | Predicted | Error | Pred Outlook |
+|---|---|---|---|---|---|---|
+| 1 | The Stalin Subway | Indie | 6.05 | 5.32 | -0.73 | At Risk |
+| 2 | Pixel Puzzles 2: Anime | Indie | 7.44 | 7.93 | +0.49 ✅ | Strong |
+| 3 | Hmmsim Metro | Indie | 8.95 | 7.92 | -1.03 | Strong |
+| 4 | Meet Your Oshi | Indie | 9.04 | 9.73 | +0.69 | Exceptional |
+| 5 | Men of Valor | AA | 6.88 | 7.64 | +0.76 | Promising |
+| 6 | Mainlining | AA | 7.77 | 7.80 | +0.03 ✅ | Promising |
+| 7 | Psychedelica of the Black Butterfly | AA | 8.60 | 7.71 | -0.89 | Promising |
+| 8 | Fate Seeker | AA | 9.08 | 8.30 | -0.78 | Strong |
+| 9 | Sid Meier's Civilization VII | AAA | 4.85 | 7.40 | +2.55 | At Risk |
+| 10 | Zanki Zero: Last Beginning | AAA | 7.75 | 7.92 | +0.17 ✅ | Promising |
+| 11 | Undernauts: Labyrinth of Yomi | AAA | 8.28 | 8.67 | +0.39 ✅ | Strong |
+| 12 | 30XX | AAA | 9.10 | 9.09 | -0.01 ✅ | Strong |
+| 13 | Horse Riding Tales | Live Service | 5.86 | 7.57 | +1.71 | Promising |
+| 14 | Shadowverse CCG | Live Service | 7.37 | 8.09 | +0.72 | Strong |
+| 15 | X8 | Live Service | 8.24 | 6.39 | -1.85 | At Risk |
+| 16 | The Lab | Live Service | 9.49 | 8.75 | -0.74 | Strong |
+
+> ✅ = within 0.5 pts · hold-out RMSE is higher than test-set RMSE as expected on only 16 games
+
+### RMSE by Tier
+
+| Tier | RMSE | MAE | Within 0.5 | Within 1.0 | Over 1.0 |
+|---|---|---|---|---|---|
+| Indie | 0.760 | 0.735 | 1 | 2 | 1 |
+| AA | 0.703 | 0.615 | 1 | 3 | 0 |
+| AAA | 1.293 | 0.780 | 3 | 0 | 1 |
+| Live Service | 1.361 | 1.255 | 0 | 2 | 2 |
 
 ## Game Tiers
 
