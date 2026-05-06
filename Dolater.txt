@@ -1,0 +1,128 @@
+DO LATER — Suggestions to Improve Hold-Out Test Results
+Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
+========================================================================
+
+── FEATURE IMPROVEMENTS ────────────────────────────────────────────────
+
+1. Add release date features
+   - Year and month of release (older games stabilise; new games spike)
+   - Days since release at time of prediction
+   - Seasonal effect: games released in Q4 (holiday) tend to get more reviews
+   - Column available: release_date_date (already in dataset, currently unused)
+
+2. Add supported languages count
+   - More languages = broader audience = more reviews = more stable rating
+   - Column: supported_languages (free text, need to count commas or parse)
+
+3. Normalize SteamSpy tag vote counts
+   - Currently raw counts: popular games have high counts on ALL tags
+   - Better: tag_count / sum(all tag counts for that game)
+   - Makes tags comparable across games with very different player bases
+
+4. Add more SteamSpy tags
+   - Only 20 tags were scraped; hundreds are available
+   - Missing genres like RPG, Puzzle, Horror, Visual Novel, Strategy affect predictions
+   - Re-scrape with full tag list from SteamSpy API
+
+5. Add achievement / DLC signals
+   - has_achievements already a category flag — check if in cat_* features
+   - Number of DLCs (from Steam API packages field) signals long-term support
+
+6. Game description sentiment / keyword features
+   - Short description is available but currently dropped
+   - Simple keyword flags: "early access", "multiplayer", "story-rich"
+   - Or TF-IDF top-N terms as binary features (no deep NLP needed)
+
+
+── ENCODING IMPROVEMENTS ───────────────────────────────────────────────
+
+7. Bayesian smoothing for mean target encoding
+   - Current: unknown developer/publisher falls back to global mean (7.97)
+   - Problem: developers with only 1 game get a perfect mean = 10 or 0
+   - Fix: smoothed_mean = (count * mean + m * global_mean) / (count + m)
+     where m ~ 5-10 (shrinks small-sample devs toward global mean)
+   - Reduces over-reliance on developer_rating_mean for new studios
+
+8. K-fold mean target encoding
+   - Current approach computes means on full df_clean (minor train/test leakage)
+   - Proper fix: use category_encoders.TargetEncoder with cv=5
+   - Prevents the model from seeing the target signal for its own folds
+
+9. Publisher/developer career stats beyond mean
+   - Add: developer_game_count (how many games they have)
+   - Add: developer_rating_std (consistency of quality)
+   - Add: developer_last_game_rating (most recent release performance)
+
+
+── MODEL IMPROVEMENTS ──────────────────────────────────────────────────
+
+10. Increase hyperparameter tuning budget
+    - Currently: 20 candidates x 5-fold = 100 fits
+    - Better: 50-100 candidates, or switch to Optuna (Bayesian optimization)
+    - Optuna finds good params faster than random search
+
+11. Train separate models per tier
+    - Indie / AA / AAA / Live Service have different rating dynamics
+    - A model trained only on AAA games would predict AAA better
+    - Requires enough data per tier (check counts before splitting)
+
+12. Ensemble XGBoost + RandomForest
+    - Both models scored nearly identically (RMSE 0.6370 vs 0.6426)
+    - Simple average or stacking often reduces variance
+    - Especially helpful for the hard cases (Civ VII, X8)
+
+13. Try LightGBM
+    - Similar to XGBoost but faster; sometimes better on tabular data
+    - Native categorical support could handle publisher/developer directly
+      without needing mean target encoding
+
+
+── DATA IMPROVEMENTS ───────────────────────────────────────────────────
+
+14. Lower MIN_REVIEWS threshold
+    - Currently 100 → 22,097 games
+    - Try 50 → ~28,000 games (more training data)
+    - Risk: noisier ratings from games with few reviews
+
+15. Fix Civ VII-style misses (reputation vs execution)
+    - Biggest miss: Civ VII predicted 7.40, actual 4.85
+    - Root cause: Firaxis developer mean is high (8.17) from past games
+    - Partial fix: add "sequel number" flag or franchise age feature
+    - Partial fix: Metacritic score (if available pre-launch) is more signal
+
+16. Improve Live Service tier detection
+    - Current proxy: price == 0 AND online tag > 0
+    - False positives: free games with no online component
+    - Improvement: require steamspy_tags_Massively Multiplayer OR
+      steamspy_tags_Free to Play (if it appears in a future dataset version)
+
+17. Handle early access games separately
+    - Early Access games have volatile, often lower ratings
+    - Add is_early_access flag (from categories or genres field)
+    - Or train a separate model / apply a correction factor
+
+
+── EVALUATION IMPROVEMENTS ─────────────────────────────────────────────
+
+18. Expand hold-out set
+    - 16 games is statistically very small (high variance in RMSE)
+    - Increase to 2-3 games per bucket (32-48 games) for stable estimates
+    - Requires re-sampling manual_test_games.csv
+
+19. Add confidence intervals to predictions
+    - XGBoost doesn't give uncertainty estimates natively
+    - Options: quantile regression (XGBoost supports it), conformal prediction,
+      or bootstrap ensemble for prediction intervals
+    - Useful for the report: "Rating: 7.4 ± 1.2"
+
+========================================================================
+Priority order (biggest likely impact first):
+  1. Bayesian smoothing for mean encoding     (#7)
+  2. Release date features                    (#1)
+  3. Optuna tuning                            (#10)
+  4. Ensemble XGBoost + RF                    (#12)
+  5. Normalized tag counts                    (#3)
+  6. K-fold mean encoding                     (#8)
+  7. More tags from SteamSpy                  (#4)
+  8. Separate models per tier                 (#11)
+========================================================================
