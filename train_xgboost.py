@@ -338,6 +338,12 @@ rf_best, rf_preds, rf_rmse, rf_mae, rf_r2 = cv_evaluate_rf(
     rf_params, n_iter=15
 )
 
+# ── Ensemble (simple average XGBoost + RandomForest) ─────────────────────
+ens_preds = (xgb_preds + rf_preds) / 2
+ens_rmse  = float(np.sqrt(mean_squared_error(y_test, ens_preds)))
+ens_mae   = float(mean_absolute_error(y_test, ens_preds))
+ens_r2    = float(r2_score(y_test, ens_preds))
+
 # ── Results table ─────────────────────────────────────────────────────────
 baseline_rmse = float(np.sqrt(mean_squared_error(y_test, best_preds)))
 baseline_mae  = float(mean_absolute_error(y_test, best_preds))
@@ -351,27 +357,27 @@ log(f"  {'-'*56}")
 log(f"  {'Baseline '+best_name:<35} {baseline_rmse:>7.4f} {baseline_mae:>7.4f} {baseline_r2:>7.4f}")
 log(f"  {'Tuned XGBoost':<35} {xgb_rmse:>7.4f} {xgb_mae:>7.4f} {xgb_r2:>7.4f}")
 log(f"  {'Tuned RandomForest':<35} {rf_rmse:>7.4f} {rf_mae:>7.4f} {rf_r2:>7.4f}")
+log(f"  {'Ensemble (XGB + RF avg)':<35} {ens_rmse:>7.4f} {ens_mae:>7.4f} {ens_r2:>7.4f}")
 log(f"  {'(Old HGBR baseline — 39 features)':<35} {'1.2754':>7} {'0.9694':>7} {'0.2378':>7}")
 
 candidates = {
-    f'Baseline {best_name}': (baseline_rmse, best_model,  best_preds),
-    'Tuned XGBoost':         (xgb_rmse,      xgb_best,    xgb_preds),
-    'Tuned RandomForest':    (rf_rmse,        rf_best,     rf_preds),
+    f'Baseline {best_name}': (baseline_rmse, best_model,  best_preds,  False),
+    'Tuned XGBoost':         (xgb_rmse,      xgb_best,    xgb_preds,   False),
+    'Tuned RandomForest':    (rf_rmse,        rf_best,     rf_preds,    False),
+    'Ensemble (XGB + RF)':   (ens_rmse,       None,        ens_preds,   True),
 }
-best_name  = min(candidates, key=lambda k: candidates[k][0])
-best_model = candidates[best_name][1]
-best_preds = candidates[best_name][2]
-best_rmse  = candidates[best_name][0]
+best_name       = min(candidates, key=lambda k: candidates[k][0])
+best_model      = candidates[best_name][1]
+best_preds      = candidates[best_name][2]
+best_rmse       = candidates[best_name][0]
+is_ensemble     = candidates[best_name][3]
 log(f"\n  Winner: {best_name}  (RMSE {best_rmse:.4f})")
 
-# ── Feature importance (top 20) ───────────────────────────────────────────
-log("\n  Top 20 Feature Importances:")
-try:
-    imp = pd.Series(best_model.feature_importances_, index=feature_cols).nlargest(20)
-    for feat, val in imp.items():
-        log(f"    {feat:<45} {val:.4f}")
-except AttributeError:
-    log("  (feature_importances_ not available for this model type)")
+# ── Feature importance (top 20) — use XGBoost importances ────────────────
+log("\n  Top 20 Feature Importances (XGBoost):")
+imp = pd.Series(xgb_best.feature_importances_, index=feature_cols).nlargest(20)
+for feat, val in imp.items():
+    log(f"    {feat:<45} {val:.4f}")
 
 # ── Save PKL ──────────────────────────────────────────────────────────────
 THRESHOLDS = {
@@ -382,11 +388,13 @@ THRESHOLDS = {
 }
 
 model_payload = {
-    'model':            best_model,
+    'model':            xgb_best,           # primary model (XGBoost)
+    'model_rf':         rf_best,            # RF for ensemble
+    'is_ensemble':      is_ensemble,
     'feature_cols':     feature_cols,
     'imputer':          imputer,
     'thresholds':       THRESHOLDS,
-    'best_params':      best_model.get_params(),
+    'best_params':      xgb_best.get_params(),
     'metrics':          {'rmse': round(best_rmse, 4),
                          'mae':  round(float(mean_absolute_error(y_test, best_preds)), 4),
                          'r2':   round(float(r2_score(y_test, best_preds)), 4)},

@@ -26,6 +26,8 @@ with open(PKL, "rb") as f:
     p = pickle.load(f)
 
 best_model      = p["model"]
+model_rf        = p.get("model_rf")
+is_ensemble     = p.get("is_ensemble", False)
 feature_cols    = p["feature_cols"]
 imputer         = p["imputer"]
 mlb_genre       = p["genre_mlb"]
@@ -131,7 +133,10 @@ for _, row in df_test.iterrows():
 
 X_hold = pd.DataFrame(X_rows)[feature_cols]
 X_hold = pd.DataFrame(imputer.transform(X_hold), columns=feature_cols)
-raw_preds = np.clip(best_model.predict(X_hold), 0, 10)
+if is_ensemble and model_rf is not None:
+    raw_preds = np.clip((best_model.predict(X_hold) + model_rf.predict(X_hold)) / 2, 0, 10)
+else:
+    raw_preds = np.clip(best_model.predict(X_hold), 0, 10)
 
 df_r = df_ho[["name", "game_scale", "Rating", "Rating_class"]].copy()
 df_r["pred_rating"]       = [round(float(p), 2) for p in raw_preds]
@@ -235,7 +240,7 @@ log("")
 log("  TOP 20 FEATURE IMPORTANCES")
 log(f"  {'Feature':<48} {'Importance':>10}  {'Cumulative':>10}")
 log("  " + "-" * 72)
-imp = pd.Series(best_model.feature_importances_, index=feature_cols).sort_values(ascending=False)
+imp = pd.Series(best_model.feature_importances_, index=feature_cols).sort_values(ascending=False)  # always XGBoost
 cumsum = 0.0
 for feat, val in imp.head(20).items():
     cumsum += val
