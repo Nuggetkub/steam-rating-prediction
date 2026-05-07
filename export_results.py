@@ -123,6 +123,7 @@ df_test["release_month"]      = _rd.dt.month.astype("float")
 df_test["release_quarter"]    = _rd.dt.quarter.astype("float")
 df_test["days_since_release"] = (REFERENCE_DATE - _rd).dt.days.clip(lower=0).astype("float")
 
+
 X_rows = []
 for _, row in df_test.iterrows():
     r = {col: 0 for col in feature_cols}

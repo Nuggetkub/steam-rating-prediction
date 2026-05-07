@@ -226,6 +226,7 @@ df_model['price_usd'] = df_model['steamspy_initialprice'].fillna(0) / 100
 df_model['price_log'] = np.log1p(df_model['price_usd'])
 df_model = df_model.drop(columns=['steamspy_initialprice'], errors='ignore')
 
+
 feature_cols = [c for c in df_model.select_dtypes(include='number').columns
                 if c not in EXCLUDE]
 X = df_model[feature_cols]
