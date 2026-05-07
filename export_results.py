@@ -82,7 +82,7 @@ df_raw = pd.read_csv(CSV, low_memory=False)
 df_raw = df_raw[df_raw["type"] == "game"].copy()
 df_lkp = df_raw[df_raw["name"].isin(df_ho["name"])].drop_duplicates("name").set_index("name")
 
-for col in ["genres", "categories", "publishers", "developers"]:
+for col in ["genres", "categories", "publishers", "developers", "release_date_date"]:
     df_ho[col] = df_ho["name"].map(df_lkp[col] if col in df_lkp.columns else pd.Series(dtype=str))
 
 df_ho["_genre_list"]       = df_ho["genres"].apply(parse_list)
@@ -102,6 +102,24 @@ df_test["metacritic_score"] = df_test["metacritic_score"].fillna(0)
 df_test["price_usd"] = df_test["steamspy_initialprice"].fillna(0) / 100
 df_test["price_log"] = np.log1p(df_test["price_usd"])
 df_test = df_test.drop(columns=["steamspy_initialprice"], errors="ignore")
+
+# Release date features (must mirror train_xgboost.py)
+REFERENCE_DATE = pd.Timestamp('2026-04-23')
+def _parse_release_date(val):
+    if pd.isna(val): return pd.NaT
+    s = str(val).strip()
+    for fmt in ('%d %b, %Y', '%b %d, %Y'):
+        try:
+            return pd.to_datetime(s, format=fmt)
+        except Exception:
+            pass
+    return pd.NaT
+
+_rd = df_test["release_date_date"].apply(_parse_release_date)
+df_test["release_year"]       = _rd.dt.year.astype("float")
+df_test["release_month"]      = _rd.dt.month.astype("float")
+df_test["release_quarter"]    = _rd.dt.quarter.astype("float")
+df_test["days_since_release"] = (REFERENCE_DATE - _rd).dt.days.clip(lower=0).astype("float")
 
 X_rows = []
 for _, row in df_test.iterrows():

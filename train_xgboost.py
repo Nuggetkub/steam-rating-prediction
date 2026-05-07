@@ -187,6 +187,29 @@ log(f"  global_mean={global_mean:.4f}  publisher range [{df_clean['publisher_rat
 # ── 7. Feature engineering ────────────────────────────────────────────────
 log("\n[7/9] Feature engineering...")
 
+# Release date features
+REFERENCE_DATE = pd.Timestamp('2026-04-23')
+
+def _parse_release_date(val):
+    if pd.isna(val): return pd.NaT
+    s = str(val).strip()
+    for fmt in ('%d %b, %Y', '%b %d, %Y'):
+        try:
+            return pd.to_datetime(s, format=fmt)
+        except Exception:
+            pass
+    return pd.NaT
+
+release_dates = df_clean['release_date_date'].apply(_parse_release_date)
+df_clean['release_year']       = release_dates.dt.year.astype('float')
+df_clean['release_month']      = release_dates.dt.month.astype('float')
+df_clean['release_quarter']    = release_dates.dt.quarter.astype('float')
+df_clean['days_since_release'] = (REFERENCE_DATE - release_dates).dt.days.clip(lower=0).astype('float')
+n_parsed = release_dates.notna().sum()
+log(f"  release_date parsed: {n_parsed:,}/{len(df_clean):,}  "
+    f"year [{int(release_dates.dt.year.min())}-{int(release_dates.dt.year.max())}]  "
+    f"days_since_release mean={df_clean['days_since_release'].mean():.0f}")
+
 EXCLUDE = {'Rating','Rating_class','name','game_scale','steamspy_score_rank','AppID',
            '_genre_list','_category_list','publisher_primary','developer_primary',
            'genres','categories','publishers','developers',
