@@ -6,13 +6,15 @@ Results written to train_results.txt
 import ast, pickle, time, sys, warnings
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split, RandomizedSearchCV, KFold
+import optuna
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, KFold, cross_val_score
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from xgboost import XGBRegressor
 warnings.filterwarnings('ignore')
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 OUT = r"C:\Users\hp\Downloads\Steam_Rating\train_results.txt"
 PKL = r"C:\Users\hp\Downloads\Steam_Rating\steam_rating_model.pkl"
@@ -267,7 +269,47 @@ best_model, best_preds, best_name = _best[1], _best[2], _best[3]
 log("\n[9/9] Hyperparameter tuning...")
 cv = KFold(n_splits=5, shuffle=True, random_state=42)
 
-def cv_evaluate(name, estimator, param_dist, n_iter=20):
+# ── XGBoost: Optuna TPE (50 trials × 5-fold) ─────────────────────────────
+N_TRIALS = 50
+log(f"  Tuning XGBoost with Optuna TPE ({N_TRIALS} trials x 5-fold)...")
+t0 = time.time()
+
+def xgb_objective(trial):
+    params = {
+        'n_estimators':     trial.suggest_int('n_estimators', 200, 1000),
+        'learning_rate':    trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
+        'max_depth':        trial.suggest_int('max_depth', 3, 8),
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+        'subsample':        trial.suggest_float('subsample', 0.5, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+        'gamma':            trial.suggest_float('gamma', 0.0, 1.0),
+        'reg_alpha':        trial.suggest_float('reg_alpha', 0.0, 2.0),
+        'reg_lambda':       trial.suggest_float('reg_lambda', 0.5, 5.0),
+    }
+    model = XGBRegressor(**params, random_state=42, verbosity=0,
+                         n_jobs=-1, tree_method='hist')
+    scores = cross_val_score(model, X_train, y_train, cv=cv,
+                             scoring='neg_root_mean_squared_error', n_jobs=1)
+    return -scores.mean()
+
+study = optuna.create_study(direction='minimize',
+                            sampler=optuna.samplers.TPESampler(seed=42))
+study.optimize(xgb_objective, n_trials=N_TRIALS, show_progress_bar=False)
+
+best_xgb_params = study.best_params
+xgb_best = XGBRegressor(**best_xgb_params, random_state=42, verbosity=0,
+                         n_jobs=-1, tree_method='hist')
+xgb_best.fit(X_train, y_train)
+xgb_preds = xgb_best.predict(X_test)
+xgb_rmse  = float(np.sqrt(mean_squared_error(y_test, xgb_preds)))
+xgb_mae   = float(mean_absolute_error(y_test, xgb_preds))
+xgb_r2    = float(r2_score(y_test, xgb_preds))
+log(f"    Best CV RMSE={study.best_value:.4f}  Test RMSE={xgb_rmse:.4f}  "
+    f"MAE={xgb_mae:.4f}  R2={xgb_r2:.4f}  ({time.time()-t0:.0f}s)")
+log(f"    Best params: {best_xgb_params}")
+
+# ── RandomForest: RandomizedSearchCV (15 candidates × 5-fold) ────────────
+def cv_evaluate_rf(name, estimator, param_dist, n_iter=15):
     log(f"  Tuning {name} ({n_iter} candidates x 5-fold)...")
     t0 = time.time()
     search = RandomizedSearchCV(estimator, param_distributions=param_dist,
@@ -275,30 +317,14 @@ def cv_evaluate(name, estimator, param_dist, n_iter=20):
                                 scoring='neg_root_mean_squared_error',
                                 n_jobs=-1, random_state=42, verbose=0)
     search.fit(X_train, y_train)
-    best   = search.best_estimator_
-    preds  = best.predict(X_test)
-    rmse   = float(np.sqrt(mean_squared_error(y_test, preds)))
-    mae    = float(mean_absolute_error(y_test, preds))
-    r2     = float(r2_score(y_test, preds))
+    best  = search.best_estimator_
+    preds = best.predict(X_test)
+    rmse  = float(np.sqrt(mean_squared_error(y_test, preds)))
+    mae   = float(mean_absolute_error(y_test, preds))
+    r2    = float(r2_score(y_test, preds))
     log(f"    CV RMSE={-search.best_score_:.4f}  Test RMSE={rmse:.4f}  MAE={mae:.4f}  R2={r2:.4f}  ({time.time()-t0:.0f}s)")
     log(f"    Best params: {search.best_params_}")
     return best, preds, rmse, mae, r2
-
-xgb_params = {
-    'n_estimators':     [200, 300, 500],
-    'learning_rate':    [0.01, 0.05, 0.1, 0.15],
-    'max_depth':        [3, 4, 5, 6, 7],
-    'min_child_weight': [1, 3, 5, 10],
-    'subsample':        [0.6, 0.7, 0.8, 1.0],
-    'colsample_bytree': [0.6, 0.7, 0.8, 1.0],
-    'gamma':            [0, 0.1, 0.5, 1.0],
-    'reg_alpha':        [0, 0.1, 0.5, 1.0],
-    'reg_lambda':       [0.5, 1.0, 2.0, 5.0],
-}
-xgb_best, xgb_preds, xgb_rmse, xgb_mae, xgb_r2 = cv_evaluate(
-    'XGBoost', XGBRegressor(random_state=42, verbosity=0, n_jobs=-1, tree_method='hist'),
-    xgb_params, n_iter=20
-)
 
 rf_params = {
     'n_estimators':      [200, 300, 500],
@@ -307,7 +333,7 @@ rf_params = {
     'max_features':      ['sqrt', 'log2', 0.5],
     'min_samples_split': [2, 5, 10],
 }
-rf_best, rf_preds, rf_rmse, rf_mae, rf_r2 = cv_evaluate(
+rf_best, rf_preds, rf_rmse, rf_mae, rf_r2 = cv_evaluate_rf(
     'RandomForest', RandomForestRegressor(n_jobs=-1, random_state=42),
     rf_params, n_iter=15
 )
