@@ -186,6 +186,7 @@ log(f"  global_mean={global_mean:.4f}  publisher range [{df_clean['publisher_rat
 
 # ── 7. Feature engineering ────────────────────────────────────────────────
 log("\n[7/9] Feature engineering...")
+
 EXCLUDE = {'Rating','Rating_class','name','game_scale','steamspy_score_rank','AppID',
            '_genre_list','_category_list','publisher_primary','developer_primary',
            'genres','categories','publishers','developers',
