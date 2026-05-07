@@ -388,8 +388,8 @@ THRESHOLDS = {
 }
 
 model_payload = {
-    'model':            xgb_best,           # primary model (XGBoost)
-    'model_rf':         rf_best,            # RF for ensemble
+    'model':            xgb_best,
+    'model_rf':         rf_best if is_ensemble else None,
     'is_ensemble':      is_ensemble,
     'feature_cols':     feature_cols,
     'imputer':          imputer,
