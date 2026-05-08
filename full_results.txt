@@ -3,29 +3,29 @@
 =========================================================================================================
 
   MODEL
-  Name                           Tuned XGBoost
-  Type                           XGBRegressor
-  Features                       128
+  Name                           Ensemble (XGB + RF)
+  Type                           XGBRegressor (logit-transformed, sample-weighted)
+  Features                       148
   Train size                     17,664 games
   Test size                      4,417 games
 
   BEST HYPERPARAMETERS
-    n_estimators                 900
-    learning_rate                0.010424927627439929
-    max_depth                    6
+    n_estimators                 929
+    learning_rate                0.009025903416958275
+    max_depth                    8
     min_child_weight             3
-    subsample                    0.635126668994823
-    colsample_bytree             0.7507285077111833
-    gamma                        0.24888195882351666
-    reg_alpha                    0.9360498595028268
-    reg_lambda                   2.2968259174346284
+    subsample                    0.746131947777321
+    colsample_bytree             0.8360423806363277
+    gamma                        0.5254351060974611
+    reg_alpha                    0.7884472870949308
+    reg_lambda                   2.132425737179277
 
 =========================================================================================================
   TEST-SET METRICS  (4,417 games, 80/20 split)
 =========================================================================================================
-  RMSE                 0.6339
-  MAE                  0.3881
-  R2                   0.8112
+  RMSE                 0.6345
+  MAE                  0.3802
+  R2                   0.8108
 
 =========================================================================================================
   HOLD-OUT TEST RESULTS  (16 games — 1 per Tier x Rating Class)
@@ -33,67 +33,67 @@
 =========================================================================================================
    #  Game                                       Tier            Actual    Pred   Error  Flag   Steam Label                Pred Outlook   Developer
   -----------------------------------------------------------------------------------------------------
-   1  The Stalin Subway                          Indie             6.05    5.10   -0.95  [~   ] Unfavorable                At Risk        Orion Games
-   2  Pixel Puzzles 2: Anime                     Indie             7.44    7.90   +0.46  [OK  ] Mostly Positive            Strong         Pixel Puzzles
-   3  Hmmsim Metro                               Indie             8.95    7.95   -1.00  [~   ] Very Positive              Strong         Jeminie Interactive
-   4  Meet Your Oshi                             Indie             9.04    9.71   +0.67  [~   ] Overwhelmingly Positive    Exceptional    VchiBan
-   5  Men of Valor                               AA                6.88    7.63   +0.75  [~   ] Unfavorable                Promising      2015
-   6  Mainlining                                 AA                7.77    7.81   +0.04  [OK  ] Mostly Positive            Promising      Rebelephant
-   7  Psychedelica of the Black Butterfly        AA                8.60    7.75   -0.85  [~   ] Very Positive              Promising      IDEA FACTORY
-   8  Fate Seeker                                AA                9.08    8.32   -0.76  [~   ] Overwhelmingly Positive    Strong         JSL Entertainment
-   9  Sid Meier's Civilization VII               AAA               4.85    7.34   +2.49  [ERR ] Unfavorable                At Risk        Firaxis Games
-  10  Zanki Zero: Last Beginning                 AAA               7.75    8.01   +0.26  [OK  ] Mostly Positive            Promising      Spike Chunsoft Co., Ltd.
-  11  Undernauts: Labyrinth of Yomi              AAA               8.28    8.74   +0.46  [OK  ] Very Positive              Strong         EXPERIENCE
-  12  30XX                                       AAA               9.10    9.14   +0.04  [OK  ] Overwhelmingly Positive    Strong         Batterystaple Games
-  13  Horse Riding Tales                         Live Service      5.86    7.61   +1.75  [ERR ] Unfavorable                Promising      Foxie Games
+   1  The Stalin Subway                          Indie             6.05    5.16   -0.89  [~   ] Unfavorable                At Risk        Orion Games
+   2  Pixel Puzzles 2: Anime                     Indie             7.44    7.95   +0.51  [~   ] Mostly Positive            Strong         Pixel Puzzles
+   3  Hmmsim Metro                               Indie             8.95    7.96   -0.99  [~   ] Very Positive              Strong         Jeminie Interactive
+   4  Meet Your Oshi                             Indie             9.04    9.90   +0.86  [~   ] Overwhelmingly Positive    Exceptional    VchiBan
+   5  Men of Valor                               AA                6.88    7.87   +0.99  [~   ] Unfavorable                Promising      2015
+   6  Mainlining                                 AA                7.77    7.92   +0.15  [OK  ] Mostly Positive            Promising      Rebelephant
+   7  Psychedelica of the Black Butterfly        AA                8.60    7.76   -0.84  [~   ] Very Positive              Promising      IDEA FACTORY
+   8  Fate Seeker                                AA                9.08    8.38   -0.70  [~   ] Overwhelmingly Positive    Strong         JSL Entertainment
+   9  Sid Meier's Civilization VII               AAA               4.85    7.85   +3.00  [ERR ] Unfavorable                Promising      Firaxis Games
+  10  Zanki Zero: Last Beginning                 AAA               7.75    8.11   +0.36  [OK  ] Mostly Positive            Promising      Spike Chunsoft Co., Ltd.
+  11  Undernauts: Labyrinth of Yomi              AAA               8.28    8.82   +0.54  [~   ] Very Positive              Strong         EXPERIENCE
+  12  30XX                                       AAA               9.10    9.20   +0.10  [OK  ] Overwhelmingly Positive    Strong         Batterystaple Games
+  13  Horse Riding Tales                         Live Service      5.86    7.65   +1.79  [ERR ] Unfavorable                Promising      Foxie Games
   14  Shadowverse CCG                            Live Service      7.37    7.96   +0.59  [~   ] Mostly Positive            Promising      Cygames, Inc.
-  15  X8                                         Live Service      8.24    6.19   -2.05  [ERR ] Very Positive              At Risk        Thirdverse, Co., Ltd.
-  16  The Lab                                    Live Service      9.49    8.66   -0.83  [~   ] Overwhelmingly Positive    Strong         Valve
+  15  X8                                         Live Service      8.24    6.26   -1.98  [ERR ] Very Positive              At Risk        Thirdverse, Co., Ltd.
+  16  The Lab                                    Live Service      9.49    8.75   -0.74  [~   ] Overwhelmingly Positive    Strong         Valve
   =====================================================================================================
 
   HOLD-OUT METRICS
-  RMSE                      1.0957
-  MAE                       0.8719
-  Within 0.5 pts            5/16  (31%)
+  RMSE                      1.1838
+  MAE                       0.9394
+  Within 0.5 pts            3/16  (19%)
   Within 1.0 pts            13/16  (81%)
 
   RMSE BY TIER
   Tier                RMSE     MAE  Games  OK (<=0.5)  ~  (<=1.0)  ERR (>1.0)
   ---------------------------------------------------------------------------
-  Indie              0.800   0.770      4           1           3           0
-  AA                 0.683   0.600      4           1           3           0
-  AAA                1.273   0.812      4           3           0           1
-  Live Service       1.441   1.305      4           0           2           2
+  Indie              0.832   0.812      4           0           4           0
+  AA                 0.741   0.670      4           1           3           0
+  AAA                1.536   1.000      4           2           1           1
+  Live Service       1.416   1.275      4           0           2           2
 
   PREDICTED OUTLOOK DISTRIBUTION
   Exceptional    #                    1
   Strong         ######               6
-  Promising      ######               6
-  At Risk        ###                  3
+  Promising      #######              7
+  At Risk        ##                   2
 
   TOP 20 FEATURE IMPORTANCES
   Feature                                          Importance  Cumulative
   ------------------------------------------------------------------------
-  developer_rating_mean                                0.3264      32.6%
-  publisher_rating_mean                                0.0796      40.6%
-  cat_remote_play_on_tablet                            0.0184      42.4%
-  metacritic_score                                     0.0160      44.0%
-  genre_massively_multiplayer                          0.0122      45.3%
-  cat_multi_player                                     0.0115      46.4%
-  cat_vr_only                                          0.0113      47.5%
-  cat_steam_cloud                                      0.0111      48.7%
-  recommendations_total                                0.0106      49.7%
-  steamspy_tags_Classic                                0.0103      50.7%
-  cat_remote_play_together                             0.0094      51.7%
-  genre_strategy                                       0.0085      52.5%
-  cat_online_pvp                                       0.0084      53.4%
-  cat_family_sharing                                   0.0083      54.2%
-  days_since_release                                   0.0080      55.0%
-  cat_online_co_op                                     0.0080      55.8%
-  price_log                                            0.0080      56.6%
-  cat_remote_play_on_phone                             0.0077      57.4%
-  ratings_usk_rating                                   0.0074      58.1%
-  price_usd                                            0.0072      58.8%
+  developer_rating_mean                                0.2668      26.7%
+  publisher_rating_mean                                0.0703      33.7%
+  metacritic_score                                     0.0136      35.1%
+  cat_remote_play_on_tablet                            0.0133      36.4%
+  steamspy_tags_2D                                     0.0114      37.6%
+  steamspy_tags_1980s                                  0.0095      38.5%
+  cat_family_sharing                                   0.0093      39.4%
+  steamspy_tags_Classic                                0.0092      40.3%
+  cat_chat_speech_to_text                              0.0091      41.3%
+  recommendations_total                                0.0090      42.2%
+  steamspy_tags_Visual Novel                           0.0089      43.0%
+  cat_multi_player                                     0.0088      43.9%
+  cat_online_co_op                                     0.0087      44.8%
+  steamspy_tags_Nostalgia                              0.0084      45.6%
+  genre_strategy                                       0.0083      46.5%
+  cat_remote_play_on_phone                             0.0074      47.2%
+  steamspy_tags_Open World                             0.0071      47.9%
+  cat_in_app_purchases                                 0.0068      48.6%
+  steamspy_tags_1990's                                 0.0067      49.3%
+  cat_steam_cloud                                      0.0067      50.0%
 
 =========================================================================================================
   END OF REPORT
