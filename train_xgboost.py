@@ -3,7 +3,7 @@ Full pipeline re-run with XGBoost as primary model.
 Mirrors Rating_Over_Value.ipynb cells 1–55 locally.
 Results written to train_results.txt
 """
-import ast, pickle, time, sys, warnings
+import ast, pickle, time, sys, warnings, io, re
 import numpy as np
 import pandas as pd
 import optuna
@@ -16,6 +16,7 @@ from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score,
 from xgboost import XGBRegressor
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 OUT        = r"C:\Users\hp\Downloads\Steam_Rating\train_results.txt"
 PKL        = r"C:\Users\hp\Downloads\Steam_Rating\steam_rating_model.pkl"
@@ -151,6 +152,8 @@ df_clean['game_scale'] = df_clean.apply(classify_game_scale, axis=1)
 SCALES  = ['Indie','AA','AAA','Live Service']
 CLASSES = ['Unfavorable','Mostly Positive','Very Positive','Overwhelmingly Positive']
 
+HOLDOUT_N = 2  # games per (Tier x Rating_class) bucket — 16 buckets x 2 = 32 games
+
 holdout_rows = []
 for scale in SCALES:
     for cls in CLASSES:
@@ -158,10 +161,10 @@ for scale in SCALES:
         if len(bucket) == 0:
             log(f"  SKIP: ({scale}, {cls})")
             continue
-        holdout_rows.append(bucket.sample(n=1, random_state=42))
+        holdout_rows.append(bucket.sample(n=min(HOLDOUT_N, len(bucket)), random_state=42))
 
 df_holdout = pd.concat(holdout_rows).reset_index(drop=True)
-log(f"  Hold-out: {len(df_holdout)} games")
+log(f"  Hold-out: {len(df_holdout)} games ({HOLDOUT_N} per bucket)")
 
 # Remove hold-out from df_clean
 holdout_original_idx = pd.Index([
@@ -238,6 +241,68 @@ developer_last_rating = (_df_dated.sort_values('_rd')
 df_clean['developer_last_rating'] = (df_clean['developer_primary']
                                      .map(developer_last_rating).fillna(global_mean))
 log(f"  developer_last_rating: mean={df_clean['developer_last_rating'].mean():.3f}")
+
+developer_last_release_date = (_df_dated.sort_values('_rd')
+                                .groupby('developer_primary')['_rd'].last())
+
+# Supported languages count
+def _count_languages(val):
+    if pd.isna(val) or str(val).strip() in ('', 'nan'):
+        return 0
+    return len([x for x in str(val).split(',') if x.strip()])
+
+df_clean['supported_languages_count'] = df_clean['supported_languages'].apply(_count_languages)
+log(f"  supported_languages_count: mean={df_clean['supported_languages_count'].mean():.1f}  "
+    f"max={df_clean['supported_languages_count'].max()}  "
+    f"zeros={(df_clean['supported_languages_count']==0).sum()}")
+
+# Content ratings count (number of regional rating boards that rated this game)
+_rat_cols = [c for c in ['ratings_usk_rating','ratings_dejus_rating',
+                          'ratings_steam_germany_rating','ratings_igrs_rating']
+             if c in df_clean.columns]
+df_clean['content_ratings_count'] = df_clean[_rat_cols].notna().sum(axis=1).astype(float)
+log(f"  content_ratings_count: mean={df_clean['content_ratings_count'].mean():.2f}  "
+    f"corr_with_rating={df_clean['content_ratings_count'].corr(df_clean['Rating']):.3f}")
+
+# Sequel / franchise number extracted from game title
+_ROMAN_MAP = {'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
+_ROMAN_PAT = re.compile(r'\b(II|III|IV|V|VI|VII|VIII|IX|X)\b', re.IGNORECASE)
+_PART_PAT  = re.compile(r'\bPart\s+(\d+)\b', re.IGNORECASE)
+_TRAIL_PAT = re.compile(r'\s([2-9])\s*$')
+
+def _extract_sequel_number(name):
+    s = str(name)
+    m = _ROMAN_PAT.search(s)
+    if m:
+        return float(_ROMAN_MAP.get(m.group(1).upper(), 0))
+    m = _PART_PAT.search(s)
+    if m:
+        return float(int(m.group(1)))
+    m = _TRAIL_PAT.search(s)
+    if m:
+        return float(int(m.group(1)))
+    return 0.0
+
+df_clean['sequel_number'] = df_clean['name'].apply(_extract_sequel_number)
+_seq_sample = df_clean[df_clean['sequel_number'] > 0][['name','sequel_number']].head(5)
+log(f"  sequel_number: {int((df_clean['sequel_number']>0).sum())} games flagged  "
+    f"examples={list(zip(_seq_sample['name'].tolist(), _seq_sample['sequel_number'].tolist()))}")
+
+# Days since developer's previous release (0 for a developer's first game)
+_df_lag = pd.DataFrame({
+    'dev': df_clean['developer_primary'].values,
+    '_rd': release_dates.values,
+}, index=df_clean.index)
+_df_lag_s = _df_lag.sort_values(['dev', '_rd'])
+_df_lag_s['_prev'] = _df_lag_s.groupby('dev')['_rd'].shift(1)
+_df_lag_s['days_since_dev_last_release'] = (
+    (_df_lag_s['_rd'] - _df_lag_s['_prev']).dt.days
+    .clip(lower=0).fillna(0).astype(float)
+)
+df_clean['days_since_dev_last_release'] = _df_lag_s['days_since_dev_last_release']
+log(f"  days_since_dev_last_release: mean={df_clean['days_since_dev_last_release'].mean():.0f}d  "
+    f"max={df_clean['days_since_dev_last_release'].max():.0f}d  "
+    f"zeros={(df_clean['days_since_dev_last_release']==0).sum()} (first-game devs)")
 
 EXCLUDE = {'Rating','Rating_class','name','game_scale','steamspy_score_rank','AppID',
            '_genre_list','_category_list','publisher_primary','developer_primary',
@@ -443,8 +508,9 @@ model_payload = {
     'developer_means':         developer_means,
     'developer_game_count':    developer_game_count,
     'developer_rating_std':    developer_rating_std,
-    'developer_last_rating':   developer_last_rating,
-    'global_mean':             global_mean,
+    'developer_last_rating':        developer_last_rating,
+    'developer_last_release_date':  developer_last_release_date,
+    'global_mean':                  global_mean,
 }
 
 with open(PKL, 'wb') as f:
@@ -455,7 +521,7 @@ log(f"\n  PKL saved: {os.path.getsize(PKL)/1024:.0f} KB  ({len(feature_cols)} fe
 
 # ── Hold-out evaluation ───────────────────────────────────────────────────
 log("\n" + "=" * 60)
-log("  HOLD-OUT EVALUATION  (16 games — 1 per Tier x Rating Class)")
+log(f"  HOLD-OUT EVALUATION  ({len(df_holdout)} games — {HOLDOUT_N} per Tier x Rating Class)")
 log("=" * 60)
 
 df_ho = df_holdout.copy()
@@ -480,6 +546,21 @@ df_ho['release_year']       = ho_rd.dt.year.astype('float')
 df_ho['release_month']      = ho_rd.dt.month.astype('float')
 df_ho['release_quarter']    = ho_rd.dt.quarter.astype('float')
 df_ho['days_since_release'] = (REFERENCE_DATE - ho_rd).dt.days.clip(lower=0).astype('float')
+
+# Supported languages count
+df_ho['supported_languages_count'] = df_ho['supported_languages'].apply(_count_languages)
+
+# Content ratings count
+df_ho['content_ratings_count'] = df_ho[_rat_cols].notna().sum(axis=1).astype(float)
+
+# Sequel number
+df_ho['sequel_number'] = df_ho['name'].apply(_extract_sequel_number)
+
+# Days since developer's last release (gap between hold-out game and dev's last training release)
+dev_last_rd = df_ho['developer_primary'].map(developer_last_release_date)
+df_ho['days_since_dev_last_release'] = (
+    (ho_rd - dev_last_rd).dt.days.clip(lower=0).fillna(0).astype(float)
+)
 
 # Mean encoding using TRAIN-ONLY means (no leakage)
 df_ho['publisher_rating_mean']  = df_ho['publisher_primary'].map(publisher_means).fillna(global_mean)

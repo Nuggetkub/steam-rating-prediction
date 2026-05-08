@@ -1,12 +1,12 @@
 # Steam Rating Prediction — Experiment Log
 
 ## Current Best Model (as of 2026-05-08)
-- Architecture: Ensemble XGBoost + RandomForest (Optuna TPE 50 trials x 5-fold)
-- Features: 151 (148 previous + developer_game_count + developer_rating_std + developer_last_rating)
-- Test-set RMSE: 0.6120 | MAE: 0.3421 | R2: 0.8240  ← best ever
-- Hold-out RMSE: 1.2402 | MAE: 0.9856 | R2: 0.0828 | Accuracy: 38% | F1 macro: 0.3965
-- Hold-out within 1.0 pts: 11/16 (69%) | within 0.5 pts: 5/16 (31%)
-- Note: hold-out metrics vary run-to-run (16-game sample, stochastic Optuna); test-set RMSE is the stable metric
+- Architecture: Tuned XGBoost (Optuna TPE 50 trials x 5-fold)
+- Features: 155 (+ sequel_number + days_since_dev_last_release)
+- Test-set RMSE: 0.5605 | MAE: 0.3076 | R2: 0.8539  ← best ever across all metrics
+- Hold-out: 32 games (2 per bucket) | RMSE: 1.1133 | MAE: 0.8253 | R2: 0.1223 | Accuracy: 56% | F1: 0.5330
+- Hold-out within 0.5 pts: 16/32 (50%) ← best ever | within 1.0 pts: 21/32 (66%)
+- Best params: n_estimators=743, lr=0.0297, max_depth=7, min_child_weight=4, subsample=0.866, colsample=0.638
 
 ## Complete Improvement History
 
@@ -24,11 +24,20 @@
 | Developer career stats (#9) | KEPT | Test RMSE 0.6336->0.6120 (best ever), MAE 0.3882->0.3421, R2 0.8113->0.8240; developer_last_rating rank 3 (2.56%), developer_rating_std rank 13 (0.77%), developer_game_count not in top 20; hold-out 12/16->11/16 (noise, Men of Valor +1.01 barely over threshold) |
 | LightGBM native categoricals (#13) | REVERTED | Test RMSE 0.6115 vs Ensemble 0.6120 — negligible 0.0005 gain; hold-out 10/16 (worse); 2.3x slower (1100s vs 467s); native cat features nearly unused (publisher_cat 1.22%, developer_cat not top 20); developer_rating_mean dominated at 70.66% — mean encoding already captures all categorical signal |
 | Post-split target encoding (Fix 1) | REVERTED | Test RMSE 0.63 -> 1.29; same root cause as K-fold (#8): 44% single-game devs collapse to global_mean, destroying developer signal |
+| Supported languages count (#2) | KEPT | Test RMSE 0.6120→0.6110, MAE 0.3421→0.3419, R² 0.8240→0.8246; hold-out RMSE 1.2402→1.2289, MAE 0.9856→0.9651; +1 within 0.5 pts (6/16 38%); accuracy 38%→44%; not in top 20 importances but consistent marginal improvement across all metrics |
+| Content ratings count (#6) | KEPT | Test RMSE 0.6110→0.6108; hold-out RMSE 1.2289→1.1436 (best ever), R² 0.0994→0.2201, MAE 0.9651→0.9131; accuracy 44%→50%; Civ VII error +2.78→+2.17; not in top 20 but strongly improved generalization — 0.179 corr with Rating; XGBoost alone won over ensemble this run |
+| MIN_REVIEWS=50 (#14) | REVERTED | Test RMSE 0.6108→0.6302 (+0.019 worse); within 1.0 pts 69%→50%; accuracy 50%→38%; 7,605 extra games with 50-99 reviews add noise that hurts generalization more than it helps |
+| Bayesian smoothing weight=3 + First-Time Dev grouping (#7) | REVERTED | Test RMSE 0.6108→0.6851; hold-out R²=−0.03; 8,472 devs (48%) → ftd_mean≈gm; developer_rating_mean 38%→5% importance; CV/test gap +0.063; all 5 smoothing variants conclusively worse — NOT APPLICABLE for this dataset |
+| Expand hold-out to 32 games (#18) | KEPT | 2 per bucket; within 1.0 pts 69% held steady (11/16→22/32); accuracy 50%→53%; UTF-8 stdout fix included (handles game names with ™ etc); test RMSE 0.5865 (note: test set composition changed — not directly comparable to 0.6108) |
+| Description keyword flags (#5) | REVERTED | Test MAE 0.3244→0.3333 (clearly worse); within-0.5 pts 13→12/32; no desc_* in top 20 (not even top 40); horror/survival/multiplayer already captured by existing steamspy_tags_* and cat_* features |
+| Metacritic NaN → median fill instead of 0 (Phase 2 D) | REVERTED | Test RMSE 0.5605→0.5601 (noise-level −0.0004); hold-out RMSE 1.1133→1.1505 (+0.037 worse); accuracy 56%→50% (−6%); F1 0.5330→0.4880; within-0.5 16→15/32; has_metacritic flag already cleanly separates reviewed/unreviewed; changing 83% of games (18,327) from 0→76 disrupted learned patterns without improving generalisation |
+| Tier-specific MIN_REVIEWS (Phase 2 C: LS≥50, others≥100) | REVERTED | Test RMSE 0.5605→0.5863 (+0.026, worse); MAE 0.3076→0.3157; accuracy 56%→53%; within-0.5 16→15/32; hold-out RMSE improved (1.1133→1.0550) but hold-out composition changed entirely (different LS games sampled) — not a clean comparison; +196 LS games (50-99 reviews) too noisy; baseline XGBoost already regressed 0.5768→0.6047 before Optuna |
+| Sequel flag + days_since_dev_last_release (Phase 2 A+B) | KEPT | Test RMSE 0.5865→0.5605 (best ever, −0.026); MAE 0.3244→0.3076; R2 0.8401→0.8539; hold-out RMSE 1.1133 (−0.041), within-0.5 13→16/32 (+3 games, best ever), accuracy 53→56%; Civ VII error +2.79→+2.32; neither feature in top 20 but baseline XGBoost confirmed signal (0.5954→0.5768 before tuning) |
 | Hold-out evaluation block (Fix 2) | KEPT | Added RMSE/MAE/R2/Accuracy/F1 reporting inside train_xgboost.py after PKL save |
 | Dual X for NaN-native XGBoost (Fix 3) | REVERTED | Test RMSE marginal gain (0.6336->0.6321) but hold-out 13/16->12/16; root cause: nearly all NaN pre-filled before split (tags=0, metacritic=0, price=0), leaving XGBoost almost nothing to learn from natively |
 
 ## Persistent Errors (present in most runs)
-1. **Civ VII** (AAA, Unfavorable): actual 4.85, pred ~7.7, error ~+2.8 — Firaxis dev mean (8.17) dominates at 36.85% importance; developer_last_rating = 4.85 too weak (2.56%) to override
+1. **Civ VII** (AAA, Unfavorable): actual 4.85, pred 7.17, error +2.32 — sequel_number=7 helped reduce from +2.79→+2.32; Firaxis dev mean still dominates
 2. **Horse Riding Tales** (Live Service, Unfavorable): actual 5.86, pred ~7.9, error ~+2.0 — Niche mobile-port with few genre signals
 3. **X8** (Live Service, Very Positive): actual 8.24, pred ~6.0, error ~−2.3 — Underrated niche VR title; model under-trusts it
 4. **The Stalin Subway** (Indie, Unfavorable): actual 6.05, pred ~4.7, error ~−1.3 — Persistent borderline case

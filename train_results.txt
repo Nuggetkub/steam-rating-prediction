@@ -3,7 +3,7 @@
 ============================================================
 
 [1/9] Loading CSV...
-  Loaded: (163918, 102)  (18s)
+  Loaded: (163918, 102)  (22s)
   After MIN_REVIEWS=100: 22,097 games
   Extra tags merged: 20 new tag columns
 
@@ -13,100 +13,121 @@
   Sample publisher : Valve
 
 [4/9] Tier classification & hold-out sampling...
-  Hold-out: 16 games
-  df_clean after hold-out removal: 22,081 games
+  Hold-out: 32 games (2 per bucket)
+  df_clean after hold-out removal: 22,065 games
 
 [5/9] Multi-hot encoding genres & categories...
   Genre cols: 25  Category cols: 58
 [6/9] Mean target encoding publisher & developer...
-  global_mean=7.9680  publisher range [1.06–10.00]
+  global_mean=7.9679  publisher range [1.06–10.00]
   developer_game_count: median=1  max=82
-  developer_rating_std: mean=0.207  (0 for single-game devs)
+  developer_rating_std: mean=0.206  (0 for single-game devs)
 
 [7/9] Feature engineering...
-  release_date parsed: 22,055/22,081  year [1997-2026]  days_since_release mean=2471
+  release_date parsed: 22,039/22,065  year [1997-2026]  days_since_release mean=2471
   developer_last_rating: mean=7.981
-  Feature matrix: (22081, 151)
-  Train: 17,664  Test: 4,417
+  supported_languages_count: mean=6.3  max=103  zeros=16
+  content_ratings_count: mean=2.64  corr_with_rating=0.179
+  sequel_number: 1359 games flagged  examples=[('Half-Life 2', 2.0), ('Team Fortress 2', 2.0), ('Left 4 Dead 2', 2.0), ('Dota 2', 2.0), ('Portal 2', 2.0)]
+  days_since_dev_last_release: mean=247d  max=6290d  zeros=13586 (first-game devs)
+  Feature matrix: (22065, 155)
+  Train: 17,652  Test: 4,413
+  metacritic_score NaN → imputed with median=76.0  (NaN in train: 18,327)
 
 [8/9] Baseline models...
-  Random Forest (baseline)            RMSE=0.6757  MAE=0.3733  R2=0.7854  (8s)
-  XGBoost (baseline)                  RMSE=0.6286  MAE=0.3545  R2=0.8143  (1s)
+  Random Forest (baseline)            RMSE=0.6315  MAE=0.3393  R2=0.8145  (8s)
+  XGBoost (baseline)                  RMSE=0.5787  MAE=0.3277  R2=0.8443  (1s)
 
 [9/9] Hyperparameter tuning...
   Tuning XGBoost with Optuna TPE (50 trials x 5-fold)...
-    Best CV RMSE=0.6133  Test RMSE=0.6125  MAE=0.3442  R2=0.8237  (451s)
-    Best params: {'n_estimators': 971, 'learning_rate': 0.04216353525041372, 'max_depth': 5, 'min_child_weight': 10, 'subsample': 0.7640858921203038, 'colsample_bytree': 0.9538323976412588, 'gamma': 0.7303668952070095, 'reg_alpha': 1.2125780566031357, 'reg_lambda': 4.864532042751733}
+    Best CV RMSE=0.5932  Test RMSE=0.5601  MAE=0.3076  R2=0.8541  (518s)
+    Best params: {'n_estimators': 946, 'learning_rate': 0.030483596181149722, 'max_depth': 6, 'min_child_weight': 8, 'subsample': 0.6231797605113019, 'colsample_bytree': 0.7282699336818267, 'gamma': 0.3401405955257477, 'reg_alpha': 0.6801723051978676, 'reg_lambda': 4.651732185777949}
   Tuning RandomForest (15 candidates x 5-fold)...
-    CV RMSE=0.6347  Test RMSE=0.6267  MAE=0.3480  R2=0.8154  (95s)
-    Best params: {'n_estimators': 300, 'min_samples_split': 2, 'min_samples_leaf': 10, 'max_features': 0.5, 'max_depth': 30}
+    CV RMSE=0.6154  Test RMSE=0.5890  MAE=0.3162  R2=0.8387  (100s)
+    Best params: {'n_estimators': 200, 'min_samples_split': 2, 'min_samples_leaf': 5, 'max_features': 0.5, 'max_depth': 30}
 
 ============================================================
   MODEL COMPARISON
 ============================================================
   Model                                  RMSE     MAE      R2
   --------------------------------------------------------
-  Baseline XGBoost                     0.6286  0.3545  0.8143
-  Tuned XGBoost                        0.6125  0.3442  0.8237
-  Tuned RandomForest                   0.6267  0.3480  0.8154
-  Ensemble (XGB + RF avg)              0.6120  0.3421  0.8240
+  Baseline XGBoost                     0.5787  0.3277  0.8443
+  Tuned XGBoost                        0.5601  0.3076  0.8541
+  Tuned RandomForest                   0.5890  0.3162  0.8387
+  Ensemble (XGB + RF avg)              0.5665  0.3067  0.8507
   (Old HGBR baseline — 39 features)    1.2754  0.9694  0.2378
 
-  Winner: Ensemble (XGB + RF)  (RMSE 0.6120)
+  Winner: Tuned XGBoost  (RMSE 0.5601)
 
   Top 20 Feature Importances (XGBoost):
-    developer_rating_mean                         0.3685
-    publisher_rating_mean                         0.0299
-    developer_last_rating                         0.0256
-    cat_tracked_controller_support                0.0232
-    cat_remote_play_on_tablet                     0.0172
-    metacritic_score                              0.0120
-    cat_family_sharing                            0.0102
-    steamspy_tags_2D                              0.0093
-    recommendations_total                         0.0091
-    steamspy_tags_Tower Defense                   0.0082
-    steamspy_tags_Singleplayer                    0.0080
-    cat_steam_workshop                            0.0080
-    developer_rating_std                          0.0077
-    cat_multi_player                              0.0076
-    cat_online_pvp                                0.0075
-    steamspy_tags_Platformer                      0.0075
-    cat_vr_only                                   0.0074
-    cat_co_op                                     0.0074
-    days_since_release                            0.0073
-    genre_free_to_play                            0.0072
+    developer_rating_mean                         0.2087
+    publisher_rating_mean                         0.0547
+    genre_massively_multiplayer                   0.0459
+    developer_last_rating                         0.0404
+    cat_mouse_only_option                         0.0227
+    steamspy_tags_2D                              0.0185
+    cat_remote_play_on_tablet                     0.0137
+    metacritic_score                              0.0129
+    cat_hdr_available                             0.0120
+    steamspy_tags_Visual Novel                    0.0118
+    cat_steam_cloud                               0.0111
+    recommendations_total                         0.0090
+    genre_early_access                            0.0088
+    cat_family_sharing                            0.0086
+    genre_free_to_play                            0.0085
+    developer_rating_std                          0.0081
+    steamspy_tags_Tower Defense                   0.0080
+    cat_remote_play_on_phone                      0.0080
+    cat_multi_player                              0.0079
+    steamspy_tags_Open World                      0.0078
 
-  PKL saved: 40008 KB  (151 features)
+  PKL saved: 4496 KB  (155 features)
 
 ============================================================
-  HOLD-OUT EVALUATION  (16 games — 1 per Tier x Rating Class)
+  HOLD-OUT EVALUATION  (32 games — 2 per Tier x Rating Class)
 ============================================================
    #  Game                                     Tier            Actual    Pred   Error  Flag
   ----------------------------------------------------------------------------------------
-   1  The Stalin Subway                        Indie             6.05    4.73   -1.32  [ERR ]
-   2  Pixel Puzzles 2: Anime                   Indie             7.44    7.99   +0.55  [~   ]
-   3  Hmmsim Metro                             Indie             8.95    7.98   -0.97  [~   ]
-   4  Meet Your Oshi                           Indie             9.04    9.89   +0.85  [~   ]
-   5  Men of Valor                             AA                6.88    7.89   +1.01  [ERR ]
-   6  Mainlining                               AA                7.77    7.96   +0.19  [OK  ]
-   7  Psychedelica of the Black Butterfly      AA                8.60    7.80   -0.80  [~   ]
-   8  Fate Seeker                              AA                9.08    8.62   -0.46  [OK  ]
-   9  Sid Meier's Civilization VII             AAA               4.85    7.68   +2.83  [ERR ]
-  10  Zanki Zero: Last Beginning               AAA               7.75    8.00   +0.25  [OK  ]
-  11  Undernauts: Labyrinth of Yomi            AAA               8.28    8.76   +0.48  [OK  ]
-  12  30XX                                     AAA               9.10    9.15   +0.05  [OK  ]
-  13  Horse Riding Tales                       Live Service      5.86    7.90   +2.04  [ERR ]
-  14  Shadowverse CCG                          Live Service      7.37    8.10   +0.73  [~   ]
-  15  X8                                       Live Service      8.24    5.99   -2.25  [ERR ]
-  16  The Lab                                  Live Service      9.49    8.52   -0.97  [~   ]
+   1  The Stalin Subway                        Indie             6.05    4.63   -1.42  [ERR ]
+   2  69 Ways to Kill a Zombie                 Indie             6.21    7.41   +1.20  [ERR ]
+   3  Pixel Puzzles 2: Anime                   Indie             7.44    7.95   +0.51  [~   ]
+   4  Lord of the Other World                  Indie             7.64    7.92   +0.28  [OK  ]
+   5  Hmmsim Metro                             Indie             8.95    7.99   -0.96  [~   ]
+   6  Karma City Police                        Indie             8.11    7.95   -0.16  [OK  ]
+   7  Meet Your Oshi                           Indie             9.04    9.87   +0.83  [~   ]
+   8  The Kotonoha Sisters and the Legend of Lysant Island Indie             9.37    9.65   +0.28  [OK  ]
+   9  Men of Valor                             AA                6.88    7.76   +0.88  [~   ]
+  10  Echelon: Wind Warriors                   AA                6.83    4.69   -2.14  [ERR ]
+  11  Mainlining                               AA                7.77    7.95   +0.18  [OK  ]
+  12  Nuclear Dawn                             AA                7.85    7.97   +0.12  [OK  ]
+  13  Psychedelica of the Black Butterfly      AA                8.60    8.24   -0.36  [OK  ]
+  14  Warhammer 40,000: Sanctus Reach (Classic) AA                8.44    7.89   -0.55  [~   ]
+  15  Fate Seeker                              AA                9.08    8.71   -0.37  [OK  ]
+  16  The Shell Part II: Purgatorio            AA                9.74    9.43   -0.31  [OK  ]
+  17  Sid Meier's Civilization VII             AAA               4.85    7.30   +2.45  [ERR ]
+  18  EARTH DEFENSE FORCE 6                    AAA               6.72    9.60   +2.88  [ERR ]
+  19  Zanki Zero: Last Beginning               AAA               7.75    7.82   +0.07  [OK  ]
+  20  Aeon Drive                               AAA               7.48    7.86   +0.38  [OK  ]
+  21  Undernauts: Labyrinth of Yomi            AAA               8.28    8.57   +0.29  [OK  ]
+  22  BLADECHIMERA                             AAA               8.87    9.60   +0.73  [~   ]
+  23  30XX                                     AAA               9.10    9.16   +0.06  [OK  ]
+  24  Thimbleweed Park™                        AAA               9.33    9.05   -0.28  [OK  ]
+  25  Horse Riding Tales                       Live Service      5.86    7.84   +1.98  [ERR ]
+  26  Stellar Survivor                         Live Service      6.55    7.97   +1.42  [ERR ]
+  27  Shadowverse CCG                          Live Service      7.37    8.22   +0.85  [~   ]
+  28  RISK: Global Domination                  Live Service      8.00    8.20   +0.20  [OK  ]
+  29  X8                                       Live Service      8.24    5.92   -2.32  [ERR ]
+  30  Age of Empires III: Definitive Edition   Live Service      8.47    8.95   +0.48  [OK  ]
+  31  The Lab                                  Live Service      9.49    8.13   -1.36  [ERR ]
+  32  Party Bots                               Live Service      9.14    7.97   -1.17  [ERR ]
   ========================================================================================
 
-  RMSE                      1.2402
-  MAE                       0.9856
-  R2                        0.0828
-  Accuracy (class)          0.3750  (38%)
-  F1 macro (class)          0.3965
-  Within 0.5 pts            5/16  (31%)
-  Within 1.0 pts            11/16  (69%)
+  RMSE                      1.1505
+  MAE                       0.8601
+  R2                        0.0627
+  Accuracy (class)          0.5000  (50%)
+  F1 macro (class)          0.4880
+  Within 0.5 pts            15/32  (47%)
+  Within 1.0 pts            22/32  (69%)
 
 Done.
