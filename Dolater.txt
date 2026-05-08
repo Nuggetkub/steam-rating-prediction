@@ -1,5 +1,5 @@
 DO LATER — Suggestions to Improve Hold-Out Test Results
-Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
+Current best test-set: RMSE 0.6120 | MAE 0.3421 | R2 0.8240  (151 features, Ensemble)
 ========================================================================
 
 ── FEATURE IMPROVEMENTS ────────────────────────────────────────────────
@@ -58,6 +58,7 @@ Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
    - Add: developer_game_count (how many games they have)
    - Add: developer_rating_std (consistency of quality)
    - Add: developer_last_game_rating (most recent release performance)
+   - TESTED: ✅ KEPT — test RMSE 0.6336->0.6120 (best ever); developer_last_rating rank 3, std rank 13, game_count not in top 20
 
 
 ── MODEL IMPROVEMENTS ──────────────────────────────────────────────────
@@ -129,6 +130,12 @@ Priority order (biggest likely impact first):
   4. Ensemble XGBoost + RF                    (#12) ❌ TESTED — no improvement
   5. Normalized tag counts                    (#3)  ❌ TESTED — no improvement
   6. K-fold mean encoding                     (#8)  ❌ TESTED — catastrophic (44% single-game devs)
-  7. More tags from SteamSpy                  (#4)  (untested)
-  8. Separate models per tier                 (#11) (untested)
+  7. More tags from SteamSpy                  (#4)  ✅ KEPT  — +1 within 1.0 pts (81%); 2D rank 5, JRPG rank 12 in importance
+  8. Separate models per tier                 (#11) ❌ TESTED — no improvement (pooled RMSE 0.6554 vs 0.6339; AA/AAA hurt by small data; global dev signal destroyed)
+  9. Logit target transform + sample weights       ❌ TESTED — worse (hold-out RMSE 1.1838 vs 1.0716; sample weights down-weight hard cases with few reviews; ensemble inflated PKL to 60MB)
+ 10. Fix target encoding leakage (post-split) ❌ TESTED — catastrophic (RMSE 0.63→1.29); same root cause as #8: 44% single-game devs lose all developer signal; NOT applicable for this dataset
+ 11. Hold-out eval block in train script      ✅ KEPT  — added RMSE/MAE/R2/Accuracy/F1 output inside train_xgboost.py after PKL save; no model change
+ 12. NaN-native XGBoost (dual X versions)    ❌ TESTED — marginal test gain (0.6336→0.6321) but hold-out 13/16→12/16; pre-pipeline fillna(0) for tags/metacritic/price leaves almost no real NaN for XGBoost to learn from
+ 13. Developer career stats                  ✅ KEPT  — test RMSE 0.6336→0.6120 (best ever); developer_last_rating rank 3 (2.56%), std rank 13 (0.77%), game_count not in top 20; hold-out 11/16 (noise)
+ 14. LightGBM with native categoricals       ❌ TESTED — test RMSE 0.6115 vs Ensemble 0.6120 (negligible); hold-out 10/16 (worse); 2.3x slower; publisher_cat 1.22%, developer_cat not top 20 — mean encoding already captures all categorical signal
 ========================================================================

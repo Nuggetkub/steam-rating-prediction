@@ -11,15 +11,17 @@ from sklearn.model_selection import train_test_split, RandomizedSearchCV, KFold,
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score,
+                             accuracy_score, f1_score)
 from xgboost import XGBRegressor
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-OUT = r"C:\Users\hp\Downloads\Steam_Rating\train_results.txt"
-PKL = r"C:\Users\hp\Downloads\Steam_Rating\steam_rating_model.pkl"
-CSV = r"C:\Users\hp\Downloads\Steam_Rating\steam_all_games.csv"
-HO  = r"C:\Users\hp\Downloads\Steam_Rating\manual_test_games.csv"
+OUT        = r"C:\Users\hp\Downloads\Steam_Rating\train_results.txt"
+PKL        = r"C:\Users\hp\Downloads\Steam_Rating\steam_rating_model.pkl"
+CSV        = r"C:\Users\hp\Downloads\Steam_Rating\steam_all_games.csv"
+HO         = r"C:\Users\hp\Downloads\Steam_Rating\manual_test_games.csv"
+EXTRA_TAGS = r"C:\Users\hp\Downloads\Steam_Rating\steamspy_extra_tags.csv"
 
 lines = []
 def log(*args):
@@ -46,6 +48,14 @@ df = df.drop(columns=['type'])
 df['Rating'] = df['steamspy_positive'] / (df['steamspy_positive'] + df['steamspy_negative']) * 10
 df_clean = df[(df['steamspy_positive'] + df['steamspy_negative']) >= 100].copy()
 log(f"  After MIN_REVIEWS=100: {len(df_clean):,} games")
+
+# Merge extra SteamSpy tags (binary presence features)
+_et = pd.read_csv(EXTRA_TAGS)
+_et['AppID'] = _et['AppID'].astype(int)
+_extra_tag_cols = [c for c in _et.columns if c != 'AppID']
+df_clean = df_clean.merge(_et, on='AppID', how='left')
+df_clean[_extra_tag_cols] = df_clean[_extra_tag_cols].fillna(0).astype(int)
+log(f"  Extra tags merged: {len(_extra_tag_cols)} new tag columns")
 
 # ── 2. EDA preprocessing ────────────────────────────────────────────────
 log("\n[2/9] Preprocessing...")
@@ -177,7 +187,7 @@ cat_cols = [f'cat_{c.lower().replace(" ","_").replace("-","_")}' for c in mlb_ca
 df_clean = pd.concat([df_clean, pd.DataFrame(cat_arr, columns=cat_cols, index=df_clean.index)], axis=1)
 log(f"  Genre cols: {len(genre_cols)}  Category cols: {len(cat_cols)}")
 
-# ── 6. Mean target encode publisher & developer ──────────────────────────
+# ── 6. Mean target encoding publisher & developer ────────────────────────
 log("[6/9] Mean target encoding publisher & developer...")
 global_mean     = df_clean['Rating'].mean()
 publisher_means = df_clean.groupby('publisher_primary')['Rating'].mean()
@@ -185,6 +195,14 @@ developer_means = df_clean.groupby('developer_primary')['Rating'].mean()
 df_clean['publisher_rating_mean'] = df_clean['publisher_primary'].map(publisher_means).fillna(global_mean)
 df_clean['developer_rating_mean'] = df_clean['developer_primary'].map(developer_means).fillna(global_mean)
 log(f"  global_mean={global_mean:.4f}  publisher range [{df_clean['publisher_rating_mean'].min():.2f}–{df_clean['publisher_rating_mean'].max():.2f}]")
+
+# Developer career stats
+developer_game_count = df_clean.groupby('developer_primary')['Rating'].count()
+developer_rating_std = df_clean.groupby('developer_primary')['Rating'].std().fillna(0)
+df_clean['developer_game_count'] = df_clean['developer_primary'].map(developer_game_count).fillna(1).astype(float)
+df_clean['developer_rating_std'] = df_clean['developer_primary'].map(developer_rating_std).fillna(0)
+log(f"  developer_game_count: median={developer_game_count.median():.0f}  max={developer_game_count.max()}")
+log(f"  developer_rating_std: mean={developer_rating_std.mean():.3f}  (0 for single-game devs)")
 
 # ── 7. Feature engineering ────────────────────────────────────────────────
 log("\n[7/9] Feature engineering...")
@@ -212,6 +230,15 @@ log(f"  release_date parsed: {n_parsed:,}/{len(df_clean):,}  "
     f"year [{int(release_dates.dt.year.min())}-{int(release_dates.dt.year.max())}]  "
     f"days_since_release mean={df_clean['days_since_release'].mean():.0f}")
 
+# Developer last game rating — rating of that developer's most recently released game
+_df_dated = df_clean.copy()
+_df_dated['_rd'] = release_dates
+developer_last_rating = (_df_dated.sort_values('_rd')
+                         .groupby('developer_primary')['Rating'].last())
+df_clean['developer_last_rating'] = (df_clean['developer_primary']
+                                     .map(developer_last_rating).fillna(global_mean))
+log(f"  developer_last_rating: mean={df_clean['developer_last_rating'].mean():.3f}")
+
 EXCLUDE = {'Rating','Rating_class','name','game_scale','steamspy_score_rank','AppID',
            '_genre_list','_category_list','publisher_primary','developer_primary',
            'genres','categories','publishers','developers',
@@ -225,7 +252,6 @@ df_model['metacritic_score'] = df_model['metacritic_score'].fillna(0)
 df_model['price_usd'] = df_model['steamspy_initialprice'].fillna(0) / 100
 df_model['price_log'] = np.log1p(df_model['price_usd'])
 df_model = df_model.drop(columns=['steamspy_initialprice'], errors='ignore')
-
 
 feature_cols = [c for c in df_model.select_dtypes(include='number').columns
                 if c not in EXCLUDE]
@@ -241,6 +267,7 @@ log(f"  Train: {X_train.shape[0]:,}  Test: {X_test.shape[0]:,}")
 imputer = SimpleImputer(strategy='median')
 X_train = pd.DataFrame(imputer.fit_transform(X_train), columns=feature_cols)
 X_test  = pd.DataFrame(imputer.transform(X_test),      columns=feature_cols)
+
 
 # ── 8. Baseline models ────────────────────────────────────────────────────
 log("\n[8/9] Baseline models...")
@@ -259,6 +286,10 @@ rf_b  = RandomForestRegressor(n_estimators=200, n_jobs=-1, random_state=42)
 xgb_b = XGBRegressor(n_estimators=200, learning_rate=0.1, max_depth=5,
                      random_state=42, verbosity=0, n_jobs=-1, tree_method='hist')
 
+rf_b  = RandomForestRegressor(n_estimators=200, n_jobs=-1, random_state=42)
+xgb_b = XGBRegressor(n_estimators=200, learning_rate=0.1, max_depth=5,
+                     random_state=42, verbosity=0, n_jobs=-1, tree_method='hist')
+
 rf_b,  rf_b_preds,  rf_b_rmse  = evaluate('Random Forest (baseline)',     rf_b,  X_train, y_train, X_test, y_test)
 xgb_b, xgb_b_preds, xgb_b_rmse = evaluate('XGBoost (baseline)',           xgb_b, X_train, y_train, X_test, y_test)
 
@@ -270,7 +301,7 @@ best_model, best_preds, best_name = _best[1], _best[2], _best[3]
 log("\n[9/9] Hyperparameter tuning...")
 cv = KFold(n_splits=5, shuffle=True, random_state=42)
 
-# ── XGBoost: Optuna TPE (50 trials × 5-fold) ─────────────────────────────
+# ── XGBoost: Optuna TPE (50 trials × 5-fold) — uses raw X ────────────────
 N_TRIALS = 50
 log(f"  Tuning XGBoost with Optuna TPE ({N_TRIALS} trials x 5-fold)...")
 t0 = time.time()
@@ -309,20 +340,20 @@ log(f"    Best CV RMSE={study.best_value:.4f}  Test RMSE={xgb_rmse:.4f}  "
     f"MAE={xgb_mae:.4f}  R2={xgb_r2:.4f}  ({time.time()-t0:.0f}s)")
 log(f"    Best params: {best_xgb_params}")
 
-# ── RandomForest: RandomizedSearchCV (15 candidates × 5-fold) ────────────
-def cv_evaluate_rf(name, estimator, param_dist, n_iter=15):
+# ── RandomForest: RandomizedSearchCV (15 candidates × 5-fold) — uses imputed X
+def cv_evaluate_rf(name, estimator, param_dist, n_iter, X_tr, y_tr, X_te, y_te):
     log(f"  Tuning {name} ({n_iter} candidates x 5-fold)...")
     t0 = time.time()
     search = RandomizedSearchCV(estimator, param_distributions=param_dist,
                                 n_iter=n_iter, cv=cv,
                                 scoring='neg_root_mean_squared_error',
                                 n_jobs=-1, random_state=42, verbose=0)
-    search.fit(X_train, y_train)
+    search.fit(X_tr, y_tr)
     best  = search.best_estimator_
-    preds = best.predict(X_test)
-    rmse  = float(np.sqrt(mean_squared_error(y_test, preds)))
-    mae   = float(mean_absolute_error(y_test, preds))
-    r2    = float(r2_score(y_test, preds))
+    preds = best.predict(X_te)
+    rmse  = float(np.sqrt(mean_squared_error(y_te, preds)))
+    mae   = float(mean_absolute_error(y_te, preds))
+    r2    = float(r2_score(y_te, preds))
     log(f"    CV RMSE={-search.best_score_:.4f}  Test RMSE={rmse:.4f}  MAE={mae:.4f}  R2={r2:.4f}  ({time.time()-t0:.0f}s)")
     log(f"    Best params: {search.best_params_}")
     return best, preds, rmse, mae, r2
@@ -336,10 +367,11 @@ rf_params = {
 }
 rf_best, rf_preds, rf_rmse, rf_mae, rf_r2 = cv_evaluate_rf(
     'RandomForest', RandomForestRegressor(n_jobs=-1, random_state=42),
-    rf_params, n_iter=15
+    rf_params, n_iter=15,
+    X_tr=X_train, y_tr=y_train, X_te=X_test, y_te=y_test
 )
 
-# ── Ensemble (simple average XGBoost + RandomForest) ─────────────────────
+# ── Ensemble (simple average XGBoost raw + RandomForest imputed) ──────────
 ens_preds = (xgb_preds + rf_preds) / 2
 ens_rmse  = float(np.sqrt(mean_squared_error(y_test, ens_preds)))
 ens_mae   = float(mean_absolute_error(y_test, ens_preds))
@@ -407,9 +439,12 @@ model_payload = {
     'genre_cols':       genre_cols,
     'cat_mlb':          mlb_cat,
     'cat_cols':         cat_cols,
-    'publisher_means':  publisher_means,
-    'developer_means':  developer_means,
-    'global_mean':      global_mean,
+    'publisher_means':         publisher_means,
+    'developer_means':         developer_means,
+    'developer_game_count':    developer_game_count,
+    'developer_rating_std':    developer_rating_std,
+    'developer_last_rating':   developer_last_rating,
+    'global_mean':             global_mean,
 }
 
 with open(PKL, 'wb') as f:
@@ -417,4 +452,106 @@ with open(PKL, 'wb') as f:
 
 import os
 log(f"\n  PKL saved: {os.path.getsize(PKL)/1024:.0f} KB  ({len(feature_cols)} features)")
+
+# ── Hold-out evaluation ───────────────────────────────────────────────────
+log("\n" + "=" * 60)
+log("  HOLD-OUT EVALUATION  (16 games — 1 per Tier x Rating Class)")
+log("=" * 60)
+
+df_ho = df_holdout.copy()
+
+# Apply fitted MLBs to hold-out genre/category lists
+ho_genre_arr = mlb_genre.transform(df_ho['_genre_list'])
+df_ho = pd.concat([df_ho,
+                   pd.DataFrame(ho_genre_arr, columns=genre_cols, index=df_ho.index)], axis=1)
+ho_cat_arr = mlb_cat.transform(df_ho['_category_list'])
+df_ho = pd.concat([df_ho,
+                   pd.DataFrame(ho_cat_arr, columns=cat_cols, index=df_ho.index)], axis=1)
+
+# Price / metacritic
+df_ho['metacritic_score'] = df_ho['metacritic_score'].fillna(0)
+df_ho['price_usd'] = df_ho['steamspy_initialprice'].fillna(0) / 100
+df_ho['price_log'] = np.log1p(df_ho['price_usd'])
+df_ho = df_ho.drop(columns=['steamspy_initialprice'], errors='ignore')
+
+# Release date features (mirror train)
+ho_rd = df_ho['release_date_date'].apply(_parse_release_date)
+df_ho['release_year']       = ho_rd.dt.year.astype('float')
+df_ho['release_month']      = ho_rd.dt.month.astype('float')
+df_ho['release_quarter']    = ho_rd.dt.quarter.astype('float')
+df_ho['days_since_release'] = (REFERENCE_DATE - ho_rd).dt.days.clip(lower=0).astype('float')
+
+# Mean encoding using TRAIN-ONLY means (no leakage)
+df_ho['publisher_rating_mean']  = df_ho['publisher_primary'].map(publisher_means).fillna(global_mean)
+df_ho['developer_rating_mean']  = df_ho['developer_primary'].map(developer_means).fillna(global_mean)
+# Developer career stats (from training set)
+df_ho['developer_game_count']   = df_ho['developer_primary'].map(developer_game_count).fillna(1).astype(float)
+df_ho['developer_rating_std']   = df_ho['developer_primary'].map(developer_rating_std).fillna(0)
+df_ho['developer_last_rating']  = df_ho['developer_primary'].map(developer_last_rating).fillna(global_mean)
+
+# Build feature matrix (zero-fill any column missing from hold-out)
+X_ho_rows = []
+for _, row in df_ho.iterrows():
+    r = {col: 0 for col in feature_cols}
+    for col in feature_cols:
+        if col in row.index:
+            r[col] = row[col]
+    X_ho_rows.append(r)
+
+X_ho_raw = pd.DataFrame(X_ho_rows)[feature_cols]
+X_ho     = pd.DataFrame(imputer.transform(X_ho_raw), columns=feature_cols)
+
+# Predict using winning model
+if is_ensemble:
+    ho_preds = np.clip((xgb_best.predict(X_ho) + rf_best.predict(X_ho)) / 2, 0, 10)
+else:
+    ho_preds = np.clip(best_model.predict(X_ho), 0, 10)
+
+ho_actual = df_holdout['Rating'].values
+
+# Regression metrics
+ho_rmse = float(np.sqrt(mean_squared_error(ho_actual, ho_preds)))
+ho_mae  = float(mean_absolute_error(ho_actual, ho_preds))
+ho_r2   = float(r2_score(ho_actual, ho_preds))
+
+# Classification metrics (same bins as Rating_class)
+_bins   = [0, 7, 8, 9, 10]
+_labels = ['Unfavorable', 'Mostly Positive', 'Very Positive', 'Overwhelmingly Positive']
+ho_actual_cls = pd.cut(ho_actual, bins=_bins, labels=_labels, include_lowest=True)
+ho_pred_cls   = pd.cut(ho_preds,  bins=_bins, labels=_labels, include_lowest=True)
+ho_acc = float(accuracy_score(ho_actual_cls, ho_pred_cls))
+ho_f1  = float(f1_score(ho_actual_cls, ho_pred_cls, average='macro', zero_division=0))
+
+within_05 = int((np.abs(ho_preds - ho_actual) <= 0.5).sum())
+within_10 = int((np.abs(ho_preds - ho_actual) <= 1.0).sum())
+n_ho      = len(ho_actual)
+
+# Per-game table
+TIER_ORDER = {'Indie': 0, 'AA': 1, 'AAA': 2, 'Live Service': 3}
+df_ho_r = df_holdout[['name','game_scale','Rating','Rating_class']].copy()
+df_ho_r['pred']      = [round(float(p), 2) for p in ho_preds]
+df_ho_r['error']     = (df_ho_r['pred'] - df_ho_r['Rating']).round(2)
+df_ho_r['abs_error'] = df_ho_r['error'].abs()
+df_ho_r['developer'] = df_ho['publisher_primary'].values
+df_ho_r['_t']        = df_ho_r['game_scale'].map(TIER_ORDER)
+df_ho_r = df_ho_r.sort_values('_t').drop(columns='_t').reset_index(drop=True)
+
+log(f"  {'#':>2}  {'Game':<40} {'Tier':<14} {'Actual':>7} {'Pred':>7} {'Error':>7}  {'Flag'}")
+log("  " + "-" * 88)
+for i, row in df_ho_r.iterrows():
+    err  = row['abs_error']
+    flag = 'OK  ' if err <= 0.5 else '~   ' if err <= 1.0 else 'ERR '
+    log(f"  {i+1:>2}  {str(row['name']):<40} {str(row['game_scale']):<14}"
+        f" {row['Rating']:>7.2f} {row['pred']:>7.2f} {row['error']:>+7.2f}  [{flag}]")
+
+log("  " + "=" * 88)
+log("")
+log(f"  {'RMSE':<25} {ho_rmse:.4f}")
+log(f"  {'MAE':<25} {ho_mae:.4f}")
+log(f"  {'R2':<25} {ho_r2:.4f}")
+log(f"  {'Accuracy (class)':<25} {ho_acc:.4f}  ({ho_acc*100:.0f}%)")
+log(f"  {'F1 macro (class)':<25} {ho_f1:.4f}")
+log(f"  {'Within 0.5 pts':<25} {within_05}/{n_ho}  ({within_05/n_ho*100:.0f}%)")
+log(f"  {'Within 1.0 pts':<25} {within_10}/{n_ho}  ({within_10/n_ho*100:.0f}%)")
+
 log("\nDone.")

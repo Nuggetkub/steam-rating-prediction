@@ -6,10 +6,11 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-OUT = r"C:\Users\hp\Downloads\Steam_Rating\full_results.txt"
-PKL = r"C:\Users\hp\Downloads\Steam_Rating\steam_rating_model.pkl"
-CSV = r"C:\Users\hp\Downloads\Steam_Rating\steam_all_games.csv"
-HO  = r"C:\Users\hp\Downloads\Steam_Rating\manual_test_games.csv"
+OUT        = r"C:\Users\hp\Downloads\Steam_Rating\full_results.txt"
+PKL        = r"C:\Users\hp\Downloads\Steam_Rating\steam_rating_model.pkl"
+CSV        = r"C:\Users\hp\Downloads\Steam_Rating\steam_all_games.csv"
+HO         = r"C:\Users\hp\Downloads\Steam_Rating\manual_test_games.csv"
+EXTRA_TAGS = r"C:\Users\hp\Downloads\Steam_Rating\steamspy_extra_tags.csv"
 
 lines = []
 def log(*args):
@@ -84,8 +85,18 @@ df_raw = pd.read_csv(CSV, low_memory=False)
 df_raw = df_raw[df_raw["type"] == "game"].copy()
 df_lkp = df_raw[df_raw["name"].isin(df_ho["name"])].drop_duplicates("name").set_index("name")
 
+# Merge extra tags into df_lkp so they can be looked up by game name
+_et = pd.read_csv(EXTRA_TAGS)
+_et["AppID"] = _et["AppID"].astype(int)
+_extra_tag_cols = [c for c in _et.columns if c != "AppID"]
+df_lkp = df_lkp.reset_index().merge(_et, on="AppID", how="left").set_index("name")
+df_lkp[_extra_tag_cols] = df_lkp[_extra_tag_cols].fillna(0).astype(int)
+
 for col in ["genres", "categories", "publishers", "developers", "release_date_date"]:
     df_ho[col] = df_ho["name"].map(df_lkp[col] if col in df_lkp.columns else pd.Series(dtype=str))
+
+for col in _extra_tag_cols:
+    df_ho[col] = df_ho["name"].map(df_lkp[col]).fillna(0).astype(int)
 
 df_ho["_genre_list"]       = df_ho["genres"].apply(parse_list)
 df_ho["_category_list"]    = df_ho["categories"].apply(parse_list)
