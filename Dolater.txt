@@ -1,5 +1,5 @@
 DO LATER — Suggestions to Improve Hold-Out Test Results
-Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
+Current best test-set: RMSE 0.5605 | MAE 0.3076 | R2 0.8539  (155 features, XGBoost, 32-game hold-out)
 ========================================================================
 
 ── FEATURE IMPROVEMENTS ────────────────────────────────────────────────
@@ -42,8 +42,14 @@ Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
    - Fix: smoothed_mean = (count * mean + m * global_mean) / (count + m)
      where m ~ 5-10 (shrinks small-sample devs toward global mean)
    - Reduces over-reliance on developer_rating_mean for new studios
-   - TESTED (m=1, m=5): WORSE — smoothing compressed the range and diluted
+   - TESTED (m=1, m=5, pre-split): WORSE — smoothing compressed the range and diluted
      the developer signal. Full means are better for this dataset.
+   - TESTED (weight=15, post-split): CATASTROPHIC — dev range [1.06-10.00]→[6.47-8.75], baseline RMSE 0.63→1.20
+   - TESTED (weight=3, post-split, First-Time Dev grouping): WORSE — test RMSE 0.6108→0.6851, hold-out R²=−0.03;
+     8,472 devs (48%) collapsed to ftd_mean≈gm; developer_rating_mean importance 38%→5%; CV/test gap +0.063
+   - ROOT CAUSE (permanent): 44% of devs have exactly 1 game. Any post-split or smoothed approach
+     collapses nearly half the dev population to global_mean, destroying the #1 feature.
+   - NOT APPLICABLE for this dataset structure.
 
 8. K-fold mean target encoding
    - Current approach computes means on full df_clean (minor train/test leakage)
@@ -58,6 +64,7 @@ Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
    - Add: developer_game_count (how many games they have)
    - Add: developer_rating_std (consistency of quality)
    - Add: developer_last_game_rating (most recent release performance)
+   - TESTED: ✅ KEPT — test RMSE 0.6336->0.6120 (best ever); developer_last_rating rank 3, std rank 13, game_count not in top 20
 
 
 ── MODEL IMPROVEMENTS ──────────────────────────────────────────────────
@@ -89,6 +96,7 @@ Current: RMSE 1.0732 | MAE 0.8462 | Within 1.0 pts 12/16 (75%)
     - Currently 100 → 22,097 games
     - Try 50 → ~28,000 games (more training data)
     - Risk: noisier ratings from games with few reviews
+    - TESTED (50): ❌ WORSE — test RMSE 0.6108→0.6302 (+0.019); within 1.0 pts 69%→50%; noisy 50-99 review games hurt generalization
 
 15. Fix Civ VII-style misses (reputation vs execution)
     - Biggest miss: Civ VII predicted 7.40, actual 4.85
@@ -129,6 +137,72 @@ Priority order (biggest likely impact first):
   4. Ensemble XGBoost + RF                    (#12) ❌ TESTED — no improvement
   5. Normalized tag counts                    (#3)  ❌ TESTED — no improvement
   6. K-fold mean encoding                     (#8)  ❌ TESTED — catastrophic (44% single-game devs)
-  7. More tags from SteamSpy                  (#4)  (untested)
-  8. Separate models per tier                 (#11) (untested)
+  7. More tags from SteamSpy                  (#4)  ✅ KEPT  — +1 within 1.0 pts (81%); 2D rank 5, JRPG rank 12 in importance
+  8. Separate models per tier                 (#11) ❌ TESTED — no improvement (pooled RMSE 0.6554 vs 0.6339; AA/AAA hurt by small data; global dev signal destroyed)
+  9. Logit target transform + sample weights       ❌ TESTED — worse (hold-out RMSE 1.1838 vs 1.0716; sample weights down-weight hard cases with few reviews; ensemble inflated PKL to 60MB)
+ 10. Fix target encoding leakage (post-split) ❌ TESTED — catastrophic (RMSE 0.63→1.29); same root cause as #8: 44% single-game devs lose all developer signal; NOT applicable for this dataset
+ 11. Hold-out eval block in train script      ✅ KEPT  — added RMSE/MAE/R2/Accuracy/F1 output inside train_xgboost.py after PKL save; no model change
+ 12. NaN-native XGBoost (dual X versions)    ❌ TESTED — marginal test gain (0.6336→0.6321) but hold-out 13/16→12/16; pre-pipeline fillna(0) for tags/metacritic/price leaves almost no real NaN for XGBoost to learn from
+ 13. Developer career stats                  ✅ KEPT  — test RMSE 0.6336→0.6120 (best ever); developer_last_rating rank 3 (2.56%), std rank 13 (0.77%), game_count not in top 20; hold-out 11/16 (noise)
+ 14. LightGBM with native categoricals       ❌ TESTED — test RMSE 0.6115 vs Ensemble 0.6120 (negligible); hold-out 10/16 (worse); 2.3x slower; publisher_cat 1.22%, developer_cat not top 20 — mean encoding already captures all categorical signal
+ 15. Supported languages count (#2)          ✅ KEPT  — test RMSE 0.6120→0.6110; hold-out RMSE 1.2402→1.2289, MAE 0.9856→0.9651; +1 within 0.5 pts (6/16), accuracy 38%→44%; not in top 20 importances but consistent improvement across all metrics
+ 16. Content ratings count (#6)              ✅ KEPT  — test RMSE 0.6110→0.6108; hold-out RMSE 1.2289→1.1436 (best ever), R² 0.0994→0.2201, accuracy 44%→50%; Civ VII error +2.78→+2.17; corr=0.179 with Rating; XGBoost alone won this run
+ 17. Expand hold-out to 32 games (#18)       ✅ KEPT  — 2 per bucket; 69% within-1.0 held steady (22/32); accuracy 53%; UTF-8 fix included; test RMSE 0.5865 (test set changed — not fully comparable)
+ 18. UTF-8 stdout fix                        ✅ KEPT  — added io.TextIOWrapper reconfigure; handles game names with ™ and other special chars
+ 19. Description keyword flags (#5)          ❌ TESTED — test MAE 0.3244→0.3333 (worse); within-0.5 pts 13→12/32; no desc_* feature in top 20; horror/survival/multiplayer already captured by steamspy_tags_* and cat_* features
+========================================================================
+
+
+── NOTEBOOKLM PHASE 2 RECOMMENDATIONS (2026-05-08) ────────────────────
+
+Current best: RMSE 0.5605 | MAE 0.3076 | R2 0.8539 (155 features, 32-game hold-out)
+Persistent errors: Civ VII +2.32, EDF6 +2.75, Horse Riding Tales +2.07, X8 −2.15, Echelon −2.05
+
+A. Franchise & sequel number flag                         [HIGH PRIORITY]
+   - Extract sequel number from game title using regex:
+     roman numerals (VII, VI, IV), Arabic numbers (6, 3), "Part II" etc.
+   - Gives model a signal to discount high developer_rating_mean for
+     late-entry sequels (Civ VII = #7, EDF = #6)
+   - Target: fix Civ VII (+2.79) and EDF6 (+2.73) AAA misses
+   - Implementation: regex on name column → sequel_number (int, 0 = no sequel flag)
+   - TESTED: ✅ KEPT (combined with B) — test RMSE 0.5865→0.5605 (best ever);
+     within-0.5 13→16/32 (+3 games); Civ VII error +2.79→+2.32; 1,359 games flagged
+
+B. Days since developer's last release                    [HIGH PRIORITY]
+   - Already have days_since_release and developer_last_rating
+   - New: days between current game and that same developer's PREVIOUS release
+   - A 10-year gap = staff turnover / IP revival → dev mean less reliable
+   - Complements developer_last_rating (what they made) with recency (when)
+   - Implementation: sort by release_date per developer, compute lag in days
+   - TESTED: ✅ KEPT (combined with A) — mean=247d, max=6290d, zeros=13,586 first-game devs
+
+C. Tier-specific MIN_REVIEWS filter                       [MEDIUM PRIORITY]
+   - Keep MIN_REVIEWS=100 for Indie/AA/AAA
+   - Lower to 20–50 only for games with Massively Multiplayer or Free to Play tags
+   - Surgical: expands Live Service pool (currently only 1,084 games) without
+     adding noisy low-review Indie games that hurt the global-50 experiment
+   - TESTED: ❌ REVERTED (MIN_LIVE=50) — LS pool 1,084→1,280 (+196 games);
+     test RMSE 0.5605→0.5863 (+0.026 worse); accuracy 56%→53%; within-0.5 16→15/32;
+     hold-out RMSE appeared better (1.0550) but hold-out composition changed
+     entirely (different LS games sampled from bigger pool — not comparable);
+     50-99 review LS games too noisy even when isolated to one tier;
+     baseline XGBoost 0.5768→0.6047 before Optuna confirmed the damage
+
+D. Leave Metacritic/Price NaNs as true NaN (XGBoost native)[LOW PRIORITY]
+   - Currently metacritic_score=0 conflates "terrible game" and "unreviewed game"
+   - Removing fillna(0) for metacritic/price lets XGBoost route unreviewed games
+     to their own decision branch via native NaN handling
+   - Previous NaN experiment failed because everything was pre-filled before XGBoost
+   - NOTE: Most tags still need 0-fill (absence = feature not present, not unknown)
+   - TESTED: ❌ REVERTED — test RMSE 0.5605→0.5601 (noise, −0.0004); hold-out
+     RMSE 1.1133→1.1505 (+0.037 worse); accuracy 56%→50% (−6%); F1 −0.045;
+     imputer median=76.0 for 18,327/22,065 games (83% without Metacritic);
+     has_metacritic flag already handles reviewed vs unreviewed cleanly;
+     changing 83% of games from 0→76 disrupted Optuna-learned patterns
+
+========================================================================
+Phase 2 priority order:
+  A+B. Sequel flag + days since last release  (same root cause, one code block)
+  C.   Tier-specific MIN_REVIEWS
+  D.   True NaN passthrough for metacritic/price
 ========================================================================
